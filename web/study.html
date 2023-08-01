@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js"></script>
+    <title>A4</title>
+</head>
+<body>
+    <div class="title">
+        {{ .studyPlan.Date }} {{ .studyPlan.Name }} 本页 {{ .studyPlan.Num }} <span id="markStudied"> {{ .studyPlan.Status }}</span>
+    </div>
+
+    <div id="messageBubble"></div>
+
+    <div id="wordContainer">
+    </div>
+
+    <div id="toolBox">
+        <button style="margin-top: 10px" id="showAll">全部显示</button>
+        <button style="margin-top: 10px" id="hiddenAll">重置</button>
+        <button style="margin-top: 10px" id="next">下一条</button>
+    </div>
+
+</body>
+
+<style>
+    /* 样式：用于使容器适应页面大小并显示在页面中央 */
+    body, html {
+      height: 100%;
+      margin: 0;
+    }
+    #wordContainer {
+      position: relative;
+      width: 90%;
+      height: calc(100% - 60px);
+      margin: 10px auto;
+      box-shadow: 5px 5px 5px 5px rgba(213, 209, 209, 0.5);
+    }
+    #markStudied {
+        cursor: pointer;
+    }
+    .title {
+        text-align: center;
+        padding-top: 10px;
+    }
+    .word {
+      position: absolute;
+      white-space: nowrap;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: box-shadow 0.2s ease;
+    }
+    .word:hover {
+        box-shadow: 5px 5px 5px rgba(213, 209, 209, 0.5);
+    }
+    .num {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        background-color: #00bcd4db;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 20px;
+        color: white;
+        font-size: 12px;
+    }
+    .ww {
+        margin-left: 4px;
+    }
+    #toolBox {
+        display: inline-grid;
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        padding: 10px;
+        transition: box-shadow 0.2s ease;
+    }
+    #toolBox:hover {
+        box-shadow: 5px 5px 5px rgba(213, 209, 209, 0.5);
+    }
+    #messageBubble {
+        position: absolute;
+        width: 200px;
+        transform: translateX(-50%);
+        color: rgba(212, 95, 0, 0.86);
+        font-size: 20px;
+        padding: 10px;
+        border-radius: 5px;
+        display: none;
+    }
+</style>
+
+<script>
+
+    function setWords (words) {
+      // 获取容器元素
+      var container = $("#wordContainer");
+
+      // 计算单词的数量和容器大小
+      var wordCount = words.length;
+      var containerWidth = container.width() - 20;
+      var containerHeight = container.height() - 50;
+
+       // 定义单词之间的最小间隔
+       var minSpacing = 10;
+       if (words.length < 30) {
+           minSpacing = 20;
+       }  else if (words.length > 50) {
+           minSpacing = 5;
+       }
+
+
+      // 存储单词的位置和尺寸信息
+      var wordPositions = [];
+
+      // 为每个单词创建并放置在容器中
+      for (var i = 0; i < words.length; i++) {
+        var word = words[i];
+        var wordWidth = 100; // 假设单词的宽度为100像素
+        var wordHeight = 20; // 假设单词的高度为20像素
+
+        var leftPosition, topPosition;
+        var collision;
+
+        do {
+          collision = false;
+
+          // 生成随机的left和top位置
+          leftPosition = Math.random() * (containerWidth - wordWidth);
+          topPosition = Math.random() * (containerHeight - wordHeight);
+
+           // 碰撞检测
+          for (var j = 0; j < wordPositions.length; j++) {
+            var otherWordPosition = wordPositions[j];
+            if (leftPosition < otherWordPosition.left + otherWordPosition.width + minSpacing &&
+                leftPosition + wordWidth + minSpacing > otherWordPosition.left &&
+                topPosition < otherWordPosition.top + otherWordPosition.height + minSpacing &&
+                topPosition + wordHeight + minSpacing > otherWordPosition.top) {
+              collision = true;
+              break;
+            }
+          }
+        } while (collision);
+
+        // 将当前单词的位置信息添加到数组中
+        wordPositions.push({ left: leftPosition, top: topPosition, width: wordWidth, height: wordHeight });
+
+        var wordElement = $("<div class='word' id='w"+(word.Rank+1)+"' title='"+word.WordTrans+"'><span class='num'>"+(word.Rank+1)+"</span><span class='ww'>" + word.HeadWord + "</span></div>");
+        wordElement.css({
+          left: leftPosition + "px",
+          top: topPosition + "px"
+        });
+
+        container.append(wordElement);
+        }
+      }
+
+      var messageTimeout
+      function showMessage(offset, text) {
+        clearTimeout(messageTimeout)
+         var m = $("#messageBubble")
+         m.text(text)
+         m.fadeIn();
+         m.css({ 'left': offset.left+100, 'top': offset.top-30 });
+         messageTimeout = setTimeout(function() {
+            m.fadeOut();
+         }, 5000);
+      }
+
+      function initDrag() {
+          var $floatingDiv = $('#toolBox');
+
+          var offsetX, offsetY;
+
+          $floatingDiv.mousedown(function(e) {
+            offsetX = e.clientX - $floatingDiv.offset().left;
+            offsetY = e.clientY - $floatingDiv.offset().top;
+
+            // 添加样式，设置光标样式为grabbing，表示正在拖动
+            $floatingDiv.css('cursor', 'grabbing');
+
+            // 绑定mousemove事件，实现拖动功能
+            $(document).mousemove(function(e) {
+              // 计算div的新位置
+              var x = e.clientX - offsetX;
+              var y = e.clientY - offsetY;
+
+              // 设置div的新位置
+              $floatingDiv.css({ 'left': x, 'top': y });
+            });
+          });
+
+          // 鼠标松开时触发mouseup事件
+          $(document).mouseup(function() {
+            // 解绑mousemove事件，停止拖动
+            $(document).off('mousemove');
+
+            // 恢复光标样式为grab
+            $floatingDiv.css('cursor', 'grab');
+          });
+      }
+
+    function initToolBox(words) {
+
+        initDrag()
+
+         var current = 0
+
+        $('#showAll').click(function() {
+            for (var i = 1; i < words.length+1; i++) {
+                $("#w"+i).show();
+            }
+        });
+        $('#hiddenAll').click(function() {
+            for (var i = 1; i < words.length+1; i++) {
+                $("#w"+i).hide();
+            }
+            $("#messageBubble").fadeOut();
+            current = 0
+        });
+
+
+        $('#next').click(function() {
+            current ++
+            $("#w"+current).show();
+            showMessage($("#w"+current).offset(), $("#w"+current).attr('title'))
+        });
+
+        $('#wordContainer').click(function() {
+            $('#next').click()
+        });
+
+        $('.word').click(function() {
+            showMessage($(this).offset(), $(this).attr("title"))
+            return false
+        })
+    }
+
+   $(document).ready(function() {
+      let studyPlan = {{ .studyPlan }}
+      let words = studyPlan.Words
+
+       $('#markStudied').click(function() {
+            $.ajax({
+              url: "/markStudied?planId="+studyPlan.PlanId,
+              type: 'PUT'
+            });
+       })
+
+       // 布局单词
+       setWords(words)
+
+       // 工具箱
+       initToolBox(words)
+
+       // 全部隐藏
+       setTimeout(function() {
+            $('#hiddenAll').click()
+       }, 2000)
+    });
+
+</script>
+</html>

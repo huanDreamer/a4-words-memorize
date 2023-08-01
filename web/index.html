@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js"></script>
+
+    <title>A4背单词</title>
+</head>
+<body>
+
+<div style="width: 80%; margin: 0 auto">
+    {{ if .bookList }}
+        {{ range $item := .bookList }}
+            <div>
+                <a href="/study?bookId={{ $item.BookId }}">
+                    <p>{{ $item.Name }} 单词量: {{ $item.WordNum }}</p>
+                </a>
+                {{ if $item.StudyPlans }}
+                最近的学习记录:
+                <ul>
+                    {{ range $plan := $item.StudyPlans }}
+                    <li>
+                        <a class="plan" href="/study?planId={{ $plan.PlanId }}">
+                            {{ $plan.Time }} 词汇: {{ $plan.Num }} {{ $plan.Status }}
+                        </a>
+                    </li>
+                    {{ end }}
+                </ul>
+                {{ end }}
+            </div>
+        {{ end }}
+    {{ end }}
+</div>
+
+
+</body>
+
+<style>
+    a {
+        text-decoration: none;
+        /*color: #0079ff;*/
+    }
+    .plan {
+        color: #0079ff;
+    }
+</style>
+</html>
