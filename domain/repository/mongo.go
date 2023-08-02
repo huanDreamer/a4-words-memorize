@@ -14,10 +14,10 @@ func InitMongo() {
 }
 
 func newMongo() *mongo.Client {
-	opt := options.Client().ApplyURI("mongodb://127.0.0.1:27017")
+	opt := options.Client().ApplyURI("mongodb://192.168.2.30:27017")
 
 	opt.Auth = &options.Credential{
-		Username: "admin",
+		Username: "root",
 		Password: "123456",
 	}
 	opt.SetLocalThreshold(3 * time.Second)                  // 只使用与mongo操作耗时小于3秒的
