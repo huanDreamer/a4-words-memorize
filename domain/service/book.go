@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"words/domain/entity"
-	"words/infrastructure/persistence"
+	"words/infra/persistence"
 )
 
 type BookService struct {

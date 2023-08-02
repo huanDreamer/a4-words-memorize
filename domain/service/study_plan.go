@@ -5,7 +5,7 @@ import (
 	"errors"
 	"math"
 	"words/domain/entity"
-	"words/infrastructure/persistence"
+	"words/infra/persistence"
 )
 
 type StudyPlanService struct {

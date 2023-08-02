@@ -2,7 +2,7 @@ package entity
 
 import (
 	"time"
-	"words/infrastructure/persistence"
+	"words/infra/persistence"
 )
 
 type StudyPlan struct {

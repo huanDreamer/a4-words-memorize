@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 	"words/domain/entity"
-	"words/infrastructure/persistence"
+	"words/infra/persistence"
 )
 
 type WordService struct {

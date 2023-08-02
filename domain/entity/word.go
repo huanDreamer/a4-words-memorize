@@ -1,6 +1,6 @@
 package entity
 
-import "words/infrastructure/persistence"
+import "words/infra/persistence"
 
 type Word struct {
 	persistence.MWord
