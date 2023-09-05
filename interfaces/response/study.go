@@ -17,3 +17,8 @@ type (
 		Mark      int      // 标记
 	}
 )
+
+type (
+	StudyPage struct {
+	}
+)

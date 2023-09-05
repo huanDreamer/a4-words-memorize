@@ -18,4 +18,8 @@ func SetRouters(r *gin.Engine) {
 		html.PUT("markStudied", bookApi.MarkStudied)
 	}
 
+	appApi := r.Group("/app")
+	{
+		appApi.GET("", bookApi.Index)
+	}
 }
