@@ -25,16 +25,10 @@ func (app StudyApplication) GenerateStudyPlan(bookId string) (planId int64, err 
 		return
 	}
 
-	// 排除已经学过的单词
-	words, err := service.NewWordsService(app.ctx).FindByBook(bookId, studied, 25)
+	// 排除已经学过的单词，并随机挑选 25 个，避免每次学习顺序都一样
+	words, err := service.NewWordsService(app.ctx).FindByBookRandom(bookId, studied, 25, true)
 	if err != nil {
 		return
-	}
-	wordMap := make(map[string][]string)
-	for _, w := range words {
-		for _, tran := range w.Content.Word.Content.Trans {
-			wordMap[w.HeadWord] = append(wordMap[w.HeadWord], fmt.Sprintf("%s %s", tran.Pos, tran.TranCn))
-		}
 	}
 
 	// 生成计划

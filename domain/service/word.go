@@ -29,10 +29,16 @@ func (svc WordService) WordNums() (nums map[string]int, err error) {
 
 // 查找单词
 func (svc WordService) FindByBook(bookId string, excludes []string, num int64) (result []entity.Word, err error) {
-	words, err := persistence.MWord{}.FindByBook(svc.ctx, bookId, excludes, nil, num)
+	return svc.FindByBookRandom(bookId, excludes, num, false)
+}
+
+// FindByBookRandom 查找单词。shuffle 为 true 时随机挑选。
+func (svc WordService) FindByBookRandom(bookId string, excludes []string, num int64, shuffle bool) (result []entity.Word, err error) {
+	words, err := persistence.MWord{}.FindByBook(svc.ctx, bookId, excludes, nil, num, shuffle)
 	if err != nil {
 		return nil, err
 	}
+	result = make([]entity.Word, 0, len(words))
 	for _, word := range words {
 		result = append(result, entity.Word{}.FromModel(word))
 	}
@@ -41,10 +47,11 @@ func (svc WordService) FindByBook(bookId string, excludes []string, num int64) (
 
 // 查找单词
 func (svc WordService) FindWordsDetail(bookId string, includeWords []string) (result []entity.Word, err error) {
-	words, err := persistence.MWord{}.FindByBook(svc.ctx, bookId, nil, includeWords, math.MaxInt)
+	words, err := persistence.MWord{}.FindByBook(svc.ctx, bookId, nil, includeWords, math.MaxInt, false)
 	if err != nil {
 		return nil, err
 	}
+	result = make([]entity.Word, 0, len(words))
 	for _, word := range words {
 		result = append(result, entity.Word{}.FromModel(word))
 	}

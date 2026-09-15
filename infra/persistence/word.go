@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"math/rand"
 
 	"words/domain/repository"
 )
@@ -72,7 +73,8 @@ func (m MWord) WordNums(ctx context.Context, bookId string) (nums map[string]int
 // FindByBook 按单词本查找单词。
 // excludes: 命中的 headWord 将被排除；includes: 仅返回命中的 headWord。
 // num<=0 时返回全部；否则最多返回 num 个。
-func (m MWord) FindByBook(ctx context.Context, bookId string, excludes []string, includes []string, num int64) (result []MWord, err error) {
+// shuffle 为 true 时，在满足条件的单词中随机挑选 num 个（用于打乱学习顺序）。
+func (m MWord) FindByBook(ctx context.Context, bookId string, excludes []string, includes []string, num int64, shuffle bool) (result []MWord, err error) {
 	var all []MWord
 	if err = repository.Default.Load(wordCollection, &all); err != nil {
 		return nil, err
@@ -94,6 +96,11 @@ func (m MWord) FindByBook(ctx context.Context, bookId string, excludes []string,
 			continue
 		}
 		matched = append(matched, w)
+	}
+
+	// 需要随机挑选且确实存在可挑选的余量时，先整体打乱再截断
+	if shuffle && num > 0 && int64(len(matched)) > num {
+		rand.Shuffle(len(matched), func(i, j int) { matched[i], matched[j] = matched[j], matched[i] })
 	}
 
 	if num > 0 && int64(len(matched)) > num {

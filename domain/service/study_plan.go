@@ -54,15 +54,19 @@ func (svc StudyPlanService) UpdateStatus(planId int64, status string) (err error
 	return plan.Update(svc.ctx)
 }
 
-// 查找最近的学习计划
+// 查找最近的学习计划（新→旧）
 func (svc StudyPlanService) FindPlans(bookId string, num int64) (result []entity.StudyPlanInfo, err error) {
-	plans, err := persistence.MStudyPlan{}.FindByBook(svc.ctx, bookId, num)
+	plans, err := persistence.MStudyPlan{}.FindRecentByBook(svc.ctx, bookId, num)
 	if err != nil {
 		return result, err
 	}
-	result = make([]entity.StudyPlanInfo, len(plans))
+	return toPlanInfos(plans), nil
+}
+
+func toPlanInfos(plans []persistence.MStudyPlan) []entity.StudyPlanInfo {
+	result := make([]entity.StudyPlanInfo, len(plans))
 	for i, plan := range plans {
 		result[i] = result[i].FromModel(plan)
 	}
-	return result, nil
+	return result
 }
