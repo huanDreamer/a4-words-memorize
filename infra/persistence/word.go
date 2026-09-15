@@ -2,142 +2,110 @@ package persistence
 
 import (
 	"context"
-	"fmt"
-	"github.com/spf13/cast"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"words/domain/repository"
 )
 
+// MWord 是单词在文件存储中的模型。
+// 相比原始词典，仅保留应用实际需要的字段（发音音标、中文释义&词性），
+// 大幅缩小数据体积，也便于文件读写。
 type MWord struct {
-	WordRank int    `bson:"wordRank"`
-	HeadWord string `bson:"headWord"`
+	WordRank int    `json:"wordRank"`
+	HeadWord string `json:"headWord"`
+	BookId   string `json:"bookId"`
 	Content  struct {
 		Word struct {
-			WordHead string `bson:"wordHead"`
-			WordId   string `bson:"wordId"`
+			WordHead string `json:"wordHead"`
+			WordId   string `json:"wordId"`
 			Content  struct {
-				Sentence struct {
-					Sentences []struct {
-						SContent string `bson:"sContent"`
-						SCn      string `bson:"sCn"`
-					} `bson:"sentences"`
-					Desc string `bson:"desc"`
-				} `bson:"sentence"`
-				Usphone string `bson:"usphone"`
-				Syno    struct {
-					Synos []struct {
-						Pos  string `bson:"pos"`
-						Tran string `bson:"tran"`
-						Hwds []struct {
-							W string `bson:"w"`
-						} `bson:"hwds"`
-					} `bson:"synos"`
-					Desc string `bson:"desc"`
-				} `bson:"syno"`
-				Ukphone  string `bson:"ukphone"`
-				Ukspeech string `bson:"ukspeech"`
-				Phrase   struct {
-					Phrases []struct {
-						PContent string `bson:"pContent"`
-						PCn      string `bson:"pCn"`
-					} `bson:"phrases"`
-					Desc string `bson:"desc"`
-				} `bson:"phrase"`
-				RelWord struct {
-					Rels []struct {
-						Pos   string `bson:"pos"`
-						Words []struct {
-							Hwd  string `bson:"hwd"`
-							Tran string `bson:"tran"`
-						} `bson:"words"`
-					} `bson:"rels"`
-					Desc string `bson:"desc"`
-				} `bson:"relWord"`
-				Usspeech string `bson:"usspeech"`
-				Trans    []struct {
-					TranCn    string `bson:"tranCn"`
-					DescOther string `bson:"descOther"`
-					Pos       string `bson:"pos"`
-					DescCn    string `bson:"descCn"`
-					TranOther string `bson:"tranOther"`
-				} `bson:"trans"`
-			} `bson:"content"`
-		} `bson:"word"`
-	} `bson:"content"`
-	BookId string `bson:"bookId"`
+				Usphone string `json:"usphone"`
+				Ukphone string `json:"ukphone"`
+				Trans   []struct {
+					TranCn string `json:"tranCn"`
+					Pos    string `json:"pos"`
+				} `json:"trans"`
+			} `json:"content"`
+		} `json:"word"`
+	} `json:"content"`
 }
 
+const wordCollection = "words"
+
+// CreateWords 批量写入单词（按 bookId+headWord 幂等去重）。
 func (m MWord) CreateWords(ctx context.Context, ws []MWord) (err error) {
-	d := make([]interface{}, len(ws))
-	for i, w := range ws {
-		d[i] = w
-	}
-	_, err = repository.GetCollection("words").InsertMany(ctx, d)
-	return
+	return repository.Default.WithLock(wordCollection, func() error {
+		var all []MWord
+		if err := repository.Default.Load(wordCollection, &all); err != nil {
+			return err
+		}
+		seen := make(map[string]bool, len(all))
+		for _, w := range all {
+			seen[w.BookId+"|"+w.HeadWord] = true
+		}
+		for _, w := range ws {
+			if seen[w.BookId+"|"+w.HeadWord] {
+				continue
+			}
+			all = append(all, w)
+			seen[w.BookId+"|"+w.HeadWord] = true
+		}
+		return repository.Default.Save(wordCollection, &all)
+	})
 }
 
+// WordNums 统计每个单词本的单词数量。bookId 非空时只统计对应单词本。
 func (m MWord) WordNums(ctx context.Context, bookId string) (nums map[string]int, err error) {
-	// 定义 Group By 和计算总数的聚合管道
-	pipeline := bson.A{
-		bson.D{{"$group", bson.D{{"_id", "$bookId"}, {"count", bson.D{{"$sum", 1}}}}}},
+	var all []MWord
+	if err = repository.Default.Load(wordCollection, &all); err != nil {
+		return nil, err
 	}
-
-	if bookId != "" {
-		pipeline = append(pipeline, bson.D{{"$match", bson.D{{"bookId", bookId}}}})
-	}
-
-	// 执行聚合操作
-	cursor, err := repository.GetCollection("words").Aggregate(ctx, pipeline)
-	if err != nil {
-		fmt.Println("Error executing aggregation:", err)
-		return
-	}
-	// 迭代结果并输出
-	defer cursor.Close(ctx)
-
 	nums = make(map[string]int)
-
-	for cursor.Next(ctx) {
-		var result bson.M
-		if err = cursor.Decode(&result); err != nil {
-			fmt.Println("Error decoding result:", err)
-			return
+	for _, w := range all {
+		if bookId != "" && w.BookId != bookId {
+			continue
 		}
-
-		id := result["_id"]
-		count := result["count"]
-		nums[cast.ToString(id)] = cast.ToInt(count)
-	}
-
-	if err = cursor.Err(); err != nil {
-		fmt.Println("Error iterating cursor:", err)
-		return
+		nums[w.BookId]++
 	}
 	return nums, nil
 }
 
+// FindByBook 按单词本查找单词。
+// excludes: 命中的 headWord 将被排除；includes: 仅返回命中的 headWord。
+// num<=0 时返回全部；否则最多返回 num 个。
 func (m MWord) FindByBook(ctx context.Context, bookId string, excludes []string, includes []string, num int64) (result []MWord, err error) {
-	filter := bson.M{
-		"bookId": bookId,
+	var all []MWord
+	if err = repository.Default.Load(wordCollection, &all); err != nil {
+		return nil, err
+	}
+	excludeSet := toSet(excludes)
+	includeSet := toSet(includes)
+	hasExclude := len(excludes) > 0
+	hasInclude := len(includes) > 0
+
+	matched := make([]MWord, 0, len(all))
+	for _, w := range all {
+		if w.BookId != bookId {
+			continue
+		}
+		if hasExclude && excludeSet[w.HeadWord] {
+			continue
+		}
+		if hasInclude && !includeSet[w.HeadWord] {
+			continue
+		}
+		matched = append(matched, w)
 	}
 
-	if len(excludes) > 0 {
-		filter["headWord"] = bson.M{"$nin": excludes}
+	if num > 0 && int64(len(matched)) > num {
+		matched = matched[:num]
 	}
-	if len(includes) > 0 {
-		filter["headWord"] = bson.M{"$in": includes}
-	}
+	return matched, nil
+}
 
-	// 定义查询选项，包含 limit
-	findOptions := options.Find()
-	findOptions.SetLimit(num)
-
-	cursor, err := repository.GetCollection("words").Find(ctx, filter, findOptions)
-	if err != nil {
-		return
+func toSet(ss []string) map[string]bool {
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
 	}
-	result = make([]MWord, 0)
-	err = cursor.All(ctx, &result)
-	return result, err
+	return m
 }

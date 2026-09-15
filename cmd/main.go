@@ -1,55 +1,58 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
+
 	"words/domain/repository"
 )
 
 func main() {
-	// 初始化mongo
-	repository.InitMongo()
+	cfg := LoadConfig()
 
-	gin.SetMode(gin.ReleaseMode)
+	// 本地文件存储目录，可通过 WORDS_DATA_DIR 或 -data 覆盖，默认 data
+	repository.Default = repository.NewStore(cfg.DataDir)
+
+	if cfg.Release {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	g := gin.Default()
+	g.SetTrustedProxies(nil)
 	SetRouters(g)
+
 	server := &http.Server{
-		Addr:           ":8900",
+		Addr:           cfg.Addr,
 		Handler:        g,
-		ReadTimeout:    time.Duration(3) * time.Second,
-		WriteTimeout:   time.Duration(3) * time.Second,
+		ReadTimeout:    cfg.ReadTimeout,
+		WriteTimeout:   cfg.WriteTimeout,
 		MaxHeaderBytes: 1 << 20,
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil {
-			panic(err)
+		fmt.Printf("server start success pid:%d addr:%s data:%s\n", os.Getpid(), cfg.Addr, repository.Default.Dir())
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "服务启动失败: %v\n", err)
+			os.Exit(1)
 		}
 	}()
 
-	QuitSignal(func() {
-		repository.CloseMongo()
-		_ = server.Close()
-		fmt.Println("程序关闭")
-	})
-}
+	// 优雅退出：收到信号后停止接收新请求，并给在途请求一段处理时间。
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	<-quit
 
-func QuitSignal(quitFunc func()) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	fmt.Printf("server start success pid:%d\n", os.Getpid())
-	for s := range c {
-		switch s {
-		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-			quitFunc()
-			return
-		default:
-			return
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		_ = server.Close()
 	}
+	fmt.Println("程序关闭")
 }

@@ -2,59 +2,87 @@ package persistence
 
 import (
 	"context"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"sort"
+
 	"words/domain/repository"
 )
 
 type MStudyPlan struct {
-	Date   string  `bson:"date"`
-	PlanId int64   `bson:"planId"`
-	BookId string  `bson:"bookId"`
-	Num    int     `bson:"num"`
-	Status string  `bson:"status"`
-	Words  []VWord `bson:"words"`
+	Date   string  `json:"date"`
+	PlanId int64   `json:"planId"`
+	BookId string  `json:"bookId"`
+	Num    int     `json:"num"`
+	Status string  `json:"status"`
+	Words  []VWord `json:"words"`
 }
 
 type VWord struct {
-	HeadWord string `bson:"headWord"`
-	Rank     int    `bson:"rank"` // 顺序
-	Mark     int    `bson:"mark"` // 标记
+	HeadWord string `json:"headWord"`
+	Rank     int    `json:"rank"` // 顺序
+	Mark     int    `json:"mark"` // 标记
 }
 
+const studyPlanCollection = "study_plan"
+
 func (m MStudyPlan) Create(ctx context.Context) (planId int64, err error) {
-	_, err = repository.GetCollection("study_plan").InsertOne(ctx, m)
+	err = repository.Default.WithLock(studyPlanCollection, func() error {
+		var plans []MStudyPlan
+		if err := repository.Default.Load(studyPlanCollection, &plans); err != nil {
+			return err
+		}
+		plans = append(plans, m)
+		return repository.Default.Save(studyPlanCollection, &plans)
+	})
 	return m.PlanId, err
 }
 
 func (m MStudyPlan) FindPlan(ctx context.Context, planId int64) (result MStudyPlan, err error) {
-	r := repository.GetCollection("study_plan").FindOne(ctx, bson.D{{"planId", planId}})
-	err = r.Decode(&result)
-	return
+	var plans []MStudyPlan
+	if err = repository.Default.Load(studyPlanCollection, &plans); err != nil {
+		return result, err
+	}
+	for _, p := range plans {
+		if p.PlanId == planId {
+			return p, nil
+		}
+	}
+	return result, repository.ErrNotFound
 }
 
 func (m MStudyPlan) Update(ctx context.Context) (err error) {
-	update := bson.M{"$set": bson.M{"status": m.Status}}
-	_, err = repository.GetCollection("study_plan").UpdateOne(ctx, bson.D{{"planId", m.PlanId}}, update)
-	return
+	return repository.Default.WithLock(studyPlanCollection, func() error {
+		var plans []MStudyPlan
+		if err := repository.Default.Load(studyPlanCollection, &plans); err != nil {
+			return err
+		}
+		for i := range plans {
+			if plans[i].PlanId == m.PlanId {
+				plans[i].Status = m.Status
+				return repository.Default.Save(studyPlanCollection, &plans)
+			}
+		}
+		return repository.ErrNotFound
+	})
 }
 
+// FindByBook 查询指定单词本/全部的学习计划，按 PlanId 升序返回，最多 num 条。
 func (m MStudyPlan) FindByBook(ctx context.Context, bookId string, num int64) (result []MStudyPlan, err error) {
-	var filter interface{}
-	if bookId != "" {
-		filter = bson.D{{"bookId", bookId}}
-	} else {
-		filter = bson.D{}
+	var plans []MStudyPlan
+	if err = repository.Default.Load(studyPlanCollection, &plans); err != nil {
+		return nil, err
 	}
-	// 定义查询选项，包含 limit
-	findOptions := options.Find()
-	findOptions.SetLimit(num).SetSort(bson.D{{"planId", 1}}) // -1 降序 1 升序
-
-	cursor, err := repository.GetCollection("study_plan").Find(ctx, filter)
-	if err != nil {
-		return
+	sort.Slice(plans, func(i, j int) bool { return plans[i].PlanId < plans[j].PlanId })
+	result = make([]MStudyPlan, 0, len(plans))
+	count := int64(0)
+	for _, p := range plans {
+		if bookId != "" && p.BookId != bookId {
+			continue
+		}
+		result = append(result, p)
+		count++
+		if num > 0 && count >= num {
+			break
+		}
 	}
-	result = make([]MStudyPlan, 0)
-	err = cursor.All(ctx, &result)
-	return result, err
+	return result, nil
 }

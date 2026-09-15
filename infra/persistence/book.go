@@ -2,39 +2,58 @@ package persistence
 
 import (
 	"context"
-	"go.mongodb.org/mongo-driver/bson"
 	"words/domain/repository"
 )
 
 type MBook struct {
-	// Id   string `bson:"_id"`
-	BookId string `bson:"bookId"`
-	Name   string `bson:"name"`
+	BookId string `json:"bookId"`
+	Name   string `json:"name"`
 }
 
+const bookCollection = "book"
+
 func (m MBook) CreateBook(ctx context.Context) (err error) {
-	_, err = repository.GetCollection("book").InsertOne(ctx, m)
-	return err
+	return repository.Default.WithLock(bookCollection, func() error {
+		var books []MBook
+		if err := repository.Default.Load(bookCollection, &books); err != nil {
+			return err
+		}
+		// 幂等：已存在的书不重复写入
+		for _, b := range books {
+			if b.BookId == m.BookId {
+				return nil
+			}
+		}
+		books = append(books, m)
+		return repository.Default.Save(bookCollection, &books)
+	})
 }
 
 func (m MBook) BookInfo(ctx context.Context, bookId string) (result MBook, err error) {
-	r := repository.GetCollection("book").FindOne(ctx, bson.D{{"bookId", bookId}})
-	err = r.Decode(&result)
-	return
+	var books []MBook
+	if err = repository.Default.Load(bookCollection, &books); err != nil {
+		return
+	}
+	for _, b := range books {
+		if b.BookId == bookId {
+			return b, nil
+		}
+	}
+	return result, repository.ErrNotFound
 }
 
 func (m MBook) List(ctx context.Context, bookId string) (result []MBook, err error) {
-	var filter interface{}
+	if err = repository.Default.Load(bookCollection, &result); err != nil {
+		return nil, err
+	}
 	if bookId != "" {
-		filter = bson.D{{"bookId", bookId}}
-	} else {
-		filter = bson.D{}
+		filtered := make([]MBook, 0)
+		for _, b := range result {
+			if b.BookId == bookId {
+				filtered = append(filtered, b)
+			}
+		}
+		result = filtered
 	}
-	cursor, err := repository.GetCollection("book").Find(ctx, filter)
-	if err != nil {
-		return
-	}
-	result = make([]MBook, 0)
-	err = cursor.All(ctx, &result)
-	return result, err
+	return result, nil
 }
