@@ -1,1 +1,20 @@
 .idea/*
+.idea/
+
+# 本地文件存储数据目录（由 cmd/import 生成）
+/data/
+
+# 编译产物
+/words
+/words-test-bin
+*.test
+
+# 备份文件
+*.json.bak
+
+# 测试覆盖率产物
+coverage.out
+coverage.html
+
+# Makefile 本地变量覆盖（不纳入版本库）
+local.mk
