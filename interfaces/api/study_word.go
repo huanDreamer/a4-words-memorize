@@ -2,56 +2,63 @@ package api
 
 import (
 	"fmt"
+	"log"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cast"
-	"net/http"
+
 	"words/application"
-	"words/interfaces/response"
 )
 
 type StudyWord struct {
 }
 
-// index页面
+// Index 首页：单词本列表 + 最近学习记录 + 顶部统计
 func (b StudyWord) Index(ctx *gin.Context) {
-	h := gin.H{}
-	bookList := application.NewBookApplication(ctx.Request.Context()).BookList()
-
-	h["bookList"] = bookList
-	ctx.HTML(http.StatusOK, "index.html", h)
+	data := application.NewBookApplication(ctx.Request.Context()).IndexData()
+	ctx.HTML(http.StatusOK, "index.html", data)
 }
 
-// 背单词页面
+// Study 背单词页面：
+//   - 带 bookId：生成一份新计划并重定向到具体计划
+//   - 带 planId：展示已有计划
 func (b StudyWord) Study(ctx *gin.Context) {
-	h := gin.H{}
 	bookId := ctx.Query("bookId")
 	planId := ctx.Query("planId")
 
-	var studyPlan response.StudyWordResp
-	var err error
-	if bookId != "" {
-		var pid int64
-		pid, err = application.NewStudyApplication(ctx.Request.Context()).GenerateStudyPlan(bookId)
+	switch {
+	case bookId != "":
+		pid, err := application.NewStudyApplication(ctx.Request.Context()).GenerateStudyPlan(bookId)
+		if err != nil {
+			b.renderError(ctx, fmt.Errorf("生成学习计划失败: %w", err))
+			return
+		}
 		ctx.Redirect(http.StatusFound, fmt.Sprintf("study?planId=%d", pid))
-		return
-	} else if planId != "" {
-		studyPlan, err = application.NewStudyApplication(ctx.Request.Context()).GetStudyPlan(cast.ToInt64(planId))
+	case planId != "":
+		studyPlan, err := application.NewStudyApplication(ctx.Request.Context()).GetStudyPlan(cast.ToInt64(planId))
+		if err != nil {
+			b.renderError(ctx, fmt.Errorf("获取学习计划失败: %w", err))
+			return
+		}
+		ctx.HTML(http.StatusOK, "study.html", gin.H{"studyPlan": studyPlan})
+	default:
+		b.renderError(ctx, fmt.Errorf("缺少 bookId 或 planId 参数"))
 	}
-	if err != nil {
-		return
-	}
-	h["studyPlan"] = studyPlan
-
-	ctx.HTML(http.StatusOK, "study.html", h)
 }
 
-// 标记为已完成
+// MarkStudied 标记计划为已完成
 func (b StudyWord) MarkStudied(ctx *gin.Context) {
-	h := gin.H{}
-	planId := ctx.Query("planId")
-	err := application.NewStudyApplication(ctx.Request.Context()).MarkStudied(cast.ToInt64(planId))
-	if err != nil {
-		h["err"] = err.Error()
+	planId := cast.ToInt64(ctx.Query("planId"))
+	if err := application.NewStudyApplication(ctx.Request.Context()).MarkStudied(planId); err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"err": err.Error()})
+		return
 	}
-	ctx.JSON(http.StatusOK, h)
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// renderError 记录错误并返回一个可读的错误页，避免用户看到空白页。
+func (b StudyWord) renderError(ctx *gin.Context, err error) {
+	log.Printf("[%s %s] %v", ctx.Request.Method, ctx.Request.URL.Path, err)
+	ctx.String(http.StatusInternalServerError, "出错了：%s", err.Error())
 }

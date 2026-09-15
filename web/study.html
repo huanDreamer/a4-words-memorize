@@ -1,265 +1,424 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta http-equiv="content-type" content="text/html;charset=utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js"></script>
-    <title>A4</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ .studyPlan.Name }} · A4 背单词</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-    <div class="title">
-        {{ .studyPlan.Date }} {{ .studyPlan.Name }} 本页 {{ .studyPlan.Num }} <span id="markStudied"> {{ .studyPlan.Status }}</span>
+<body class="study-page">
+
+<header class="topbar">
+    <a class="brand" href="/"><span class="leaf">🌿</span> A4 背单词</a>
+
+    <div class="topbar-meta">
+        <span class="book-name">{{ .studyPlan.Name }}</span>
+        <span class="sep"></span>
+        <span>本页 <b>{{ .studyPlan.Num }}</b> 词</span>
+        <span class="sep"></span>
+        <span>{{ .studyPlan.Date }}</span>
     </div>
 
-    <div id="messageBubble"></div>
-
-    <div id="wordContainer">
+    <div class="topbar-actions">
+        <span class="badge {{ if eq .studyPlan.Status "已完成" }}done{{ else }}todo{{ end }}"
+              id="statusBadge">{{ .studyPlan.Status }}</span>
+        <button class="btn primary" id="markStudied" type="button">
+            <span class="kbd">Enter</span> 标记完成
+        </button>
     </div>
+</header>
 
-    <div id="toolBox">
-        <button style="margin-top: 10px" id="showAll">全部显示</button>
-        <button style="margin-top: 10px" id="hiddenAll">重置</button>
-        <button style="margin-top: 10px" id="next">下一条</button>
-    </div>
+<main class="study-main">
+    <div id="wordContainer" aria-label="单词区"></div>
+    <p class="hint" id="hint">点击空白处或按 <b>空格</b> 揭晓下一个单词，悬停任意单词可再看释义</p>
+</main>
 
-</body>
+<div id="messageBubble" role="status" aria-live="polite"></div>
 
-<style>
-    /* 样式：用于使容器适应页面大小并显示在页面中央 */
-    body, html {
-      height: 100%;
-      margin: 0;
-    }
-    #wordContainer {
-      position: relative;
-      width: 90%;
-      height: calc(100% - 60px);
-      margin: 10px auto;
-      box-shadow: 5px 5px 5px 5px rgba(213, 209, 209, 0.5);
-    }
-    #markStudied {
-        cursor: pointer;
-    }
-    .title {
-        text-align: center;
-        padding-top: 10px;
-    }
-    .word {
-      position: absolute;
-      white-space: nowrap;
-      padding: 5px 10px;
-      cursor: pointer;
-      transition: box-shadow 0.2s ease;
-    }
-    .word:hover {
-        box-shadow: 5px 5px 5px rgba(213, 209, 209, 0.5);
-    }
-    .num {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        background-color: #00bcd4db;
-        border-radius: 50%;
-        text-align: center;
-        line-height: 20px;
-        color: white;
-        font-size: 12px;
-    }
-    .ww {
-        margin-left: 4px;
-    }
-    #toolBox {
-        display: inline-grid;
-        position: absolute;
-        bottom: 20px;
-        right: 20px;
-        padding: 10px;
-        transition: box-shadow 0.2s ease;
-    }
-    #toolBox:hover {
-        box-shadow: 5px 5px 5px rgba(213, 209, 209, 0.5);
-    }
-    #messageBubble {
-        position: absolute;
-        width: 200px;
-        transform: translateX(-50%);
-        color: rgba(212, 95, 0, 0.86);
-        font-size: 20px;
-        padding: 10px;
-        border-radius: 5px;
-        display: none;
-    }
-</style>
+<div class="toolbox" id="toolBox">
+    <button class="btn" id="showAll" type="button">全部显示</button>
+    <button class="btn" id="hiddenAll" type="button">重置</button>
+    <button class="btn" id="next" type="button">下一条</button>
+</div>
+
+<script id="studyData" type="application/json">{{ .studyPlan }}</script>
 
 <script>
+(function () {
+    'use strict';
 
-    function setWords (words) {
-      // 获取容器元素
-      var container = $("#wordContainer");
+    // 由服务端注入的计划数据
+    var studyPlan = JSON.parse(document.getElementById('studyData').textContent);
+    var words = studyPlan.Words || [];
 
-      // 计算单词的数量和容器大小
-      var wordCount = words.length;
-      var containerWidth = container.width() - 20;
-      var containerHeight = container.height() - 50;
+    var container = document.getElementById('wordContainer');
+    var bubble = document.getElementById('messageBubble');
+    var hint = document.getElementById('hint');
+    var statusBadge = document.getElementById('statusBadge');
+    var markBtn = document.getElementById('markStudied');
 
-       // 定义单词之间的最小间隔
-       var minSpacing = 10;
-       if (words.length < 30) {
-           minSpacing = 20;
-       }  else if (words.length > 50) {
-           minSpacing = 5;
-       }
+    var current = 0;     // 已揭晓到第几个
+    var bubbleTimer = null;
 
+    /* ------------------------------------------------ 布局 */
 
-      // 存储单词的位置和尺寸信息
-      var wordPositions = [];
+    // 为整页单词安排位置。
+    // 先尝试随机散落（A4 纸的观感）；只要有任何一个词放不下，
+    // 就整体改用统一的网格布局，保证一定不重叠、不越界。
+    function layout() {
+        var els = [];
+        var hidden = [];
 
-      // 为每个单词创建并放置在容器中
-      for (var i = 0; i < words.length; i++) {
-        var word = words[i];
-        var wordWidth = 100; // 假设单词的宽度为100像素
-        var wordHeight = 20; // 假设单词的高度为20像素
-
-        var leftPosition, topPosition;
-        var collision;
-
-        do {
-          collision = false;
-
-          // 生成随机的left和top位置
-          leftPosition = Math.random() * (containerWidth - wordWidth);
-          topPosition = Math.random() * (containerHeight - wordHeight);
-
-           // 碰撞检测
-          for (var j = 0; j < wordPositions.length; j++) {
-            var otherWordPosition = wordPositions[j];
-            if (leftPosition < otherWordPosition.left + otherWordPosition.width + minSpacing &&
-                leftPosition + wordWidth + minSpacing > otherWordPosition.left &&
-                topPosition < otherWordPosition.top + otherWordPosition.height + minSpacing &&
-                topPosition + wordHeight + minSpacing > otherWordPosition.top) {
-              collision = true;
-              break;
+        // 单词初始都是 display:none，此时读 offsetWidth/offsetHeight 只会得到 0，
+        // 若按兜底尺寸摆位，长单词（如 international）就会压到邻居身上。
+        // 这里先让隐藏的词以不可见的方式参与布局，量到真实尺寸后再恢复隐藏。
+        for (var i = 0; i < words.length; i++) {
+            var el = document.getElementById('w' + (i + 1));
+            if (!el) {
+                continue;
             }
-          }
-        } while (collision);
-
-        // 将当前单词的位置信息添加到数组中
-        wordPositions.push({ left: leftPosition, top: topPosition, width: wordWidth, height: wordHeight });
-
-        var wordElement = $("<div class='word' id='w"+(word.Rank+1)+"' title='"+word.WordTrans+"'><span class='num'>"+(word.Rank+1)+"</span><span class='ww'>" + word.HeadWord + "</span></div>");
-        wordElement.css({
-          left: leftPosition + "px",
-          top: topPosition + "px"
-        });
-
-        container.append(wordElement);
+            if (el.classList.contains('is-hidden')) {
+                el.style.visibility = 'hidden';
+                el.style.display = 'inline-flex';
+                hidden.push(el);
+            }
+            els.push({ el: el, w: el.offsetWidth, h: el.offsetHeight });
         }
-      }
 
-      var messageTimeout
-      function showMessage(offset, text) {
-        clearTimeout(messageTimeout)
-         var m = $("#messageBubble")
-         m.text(text)
-         m.fadeIn();
-         m.css({ 'left': offset.left+100, 'top': offset.top-30 });
-         messageTimeout = setTimeout(function() {
-            m.fadeOut();
-         }, 5000);
-      }
-
-      function initDrag() {
-          var $floatingDiv = $('#toolBox');
-
-          var offsetX, offsetY;
-
-          $floatingDiv.mousedown(function(e) {
-            offsetX = e.clientX - $floatingDiv.offset().left;
-            offsetY = e.clientY - $floatingDiv.offset().top;
-
-            // 添加样式，设置光标样式为grabbing，表示正在拖动
-            $floatingDiv.css('cursor', 'grabbing');
-
-            // 绑定mousemove事件，实现拖动功能
-            $(document).mousemove(function(e) {
-              // 计算div的新位置
-              var x = e.clientX - offsetX;
-              var y = e.clientY - offsetY;
-
-              // 设置div的新位置
-              $floatingDiv.css({ 'left': x, 'top': y });
-            });
-          });
-
-          // 鼠标松开时触发mouseup事件
-          $(document).mouseup(function() {
-            // 解绑mousemove事件，停止拖动
-            $(document).off('mousemove');
-
-            // 恢复光标样式为grab
-            $floatingDiv.css('cursor', 'grab');
-          });
-      }
-
-    function initToolBox(words) {
-
-        initDrag()
-
-         var current = 0
-
-        $('#showAll').click(function() {
-            for (var i = 1; i < words.length+1; i++) {
-                $("#w"+i).show();
-            }
-        });
-        $('#hiddenAll').click(function() {
-            for (var i = 1; i < words.length+1; i++) {
-                $("#w"+i).hide();
-            }
-            $("#messageBubble").fadeOut();
-            current = 0
+        hidden.forEach(function (el) {
+            el.style.display = '';
+            el.style.visibility = '';
         });
 
+        els = els.filter(function (o) { return o.w > 0 && o.h > 0; });
+        if (!els.length) {
+            return;
+        }
 
-        $('#next').click(function() {
-            current ++
-            $("#w"+current).show();
-            showMessage($("#w"+current).offset(), $("#w"+current).attr('title'))
+        var W = container.clientWidth - 16;
+        var H = container.clientHeight - 16;
+        // 单词多时留白小一些
+        var pad = words.length > 40 ? 6 : 10;
+
+        var placed = scatter(els, W, H, pad);
+        if (!placed) {
+            placed = grid(els, W, H, pad);
+        }
+
+        placed.forEach(function (p) {
+            p.el.style.left = Math.round(p.x) + 'px';
+            p.el.style.top = Math.round(p.y) + 'px';
         });
 
-        $('#wordContainer').click(function() {
-            $('#next').click()
+        // 下一帧再开启 left/top 过渡，避免单词从 (0,0) 飞入
+        requestAnimationFrame(function () {
+            els.forEach(function (o) { o.el.classList.add('placed'); });
         });
-
-        $('.word').click(function() {
-            showMessage($(this).offset(), $(this).attr("title"))
-            return false
-        })
     }
 
-   $(document).ready(function() {
-      let studyPlan = {{ .studyPlan }}
-      let words = studyPlan.Words
+    // 随机散落：全部放下才返回结果，否则返回 null 交给网格布局
+    function scatter(els, W, H, pad) {
+        var placed = [];
+        for (var i = 0; i < els.length; i++) {
+            var o = els[i];
+            if (W <= o.w || H <= o.h) {
+                return null;
+            }
+            var x, y, ok = false;
+            for (var t = 0; t < 250; t++) {
+                x = Math.random() * (W - o.w);
+                y = Math.random() * (H - o.h);
+                if (!hits(placed, x, y, o.w, o.h, pad)) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) {
+                return null;
+            }
+            placed.push({ el: o.el, x: x, y: y });
+            // 记录占位盒（用宽高推导，避免反复读布局）
+            placed[placed.length - 1].w = o.w;
+            placed[placed.length - 1].h = o.h;
+        }
+        return placed;
+    }
 
-       $('#markStudied').click(function() {
-            $.ajax({
-              url: "/markStudied?planId="+studyPlan.PlanId,
-              type: 'PUT'
-            });
-       })
+    function hits(placed, x, y, w, h, pad) {
+        for (var i = 0; i < placed.length; i++) {
+            var p = placed[i];
+            if (x < p.x + p.w + pad && x + w + pad > p.x &&
+                y < p.y + p.h + pad && y + h + pad > p.y) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-       // 布局单词
-       setWords(words)
+    // 网格布局：按所有单词里最大的尺寸统一算行列，
+    // 这样每个词用的是同一套网格，绝不会互相压到。
+    function grid(els, W, H, pad) {
+        var maxW = 0, maxH = 0;
+        els.forEach(function (o) {
+            if (o.w > maxW) { maxW = o.w; }
+            if (o.h > maxH) { maxH = o.h; }
+        });
 
-       // 工具箱
-       initToolBox(words)
+        var cw = maxW + pad;
+        var rh = maxH + pad;
+        var cols = Math.max(1, Math.floor((W + pad) / cw));
+        var rows = Math.max(1, Math.ceil(els.length / cols));
 
-       // 全部隐藏
-       setTimeout(function() {
-            $('#hiddenAll').click()
-       }, 2000)
+        // 行比可用高度还多时压缩行距，宁可贴近一点也不能越界
+        var rowStep = Math.min(rh, H / rows);
+        var colStep = Math.min(cw, W / cols);
+
+        return els.map(function (o, i) {
+            var col = i % cols;
+            var row = Math.floor(i / cols);
+            var slackX = Math.max(0, colStep - o.w);
+            var slackY = Math.max(0, rowStep - o.h);
+            return {
+                el: o.el,
+                x: Math.min(col * colStep + Math.random() * slackX, Math.max(0, W - o.w)),
+                y: Math.min(row * rowStep + Math.random() * slackY, Math.max(0, H - o.h))
+            };
+        });
+    }
+
+    /* ------------------------------------------------ 释义气泡 */
+
+    function showTrans(el) {
+        var word = words[Number(el.id.slice(1)) - 1];
+        var trans = (word && word.WordTrans) || [];
+
+        bubble.innerHTML = '';
+        bubble.className = '';
+
+        if (!word) {
+            return;
+        }
+
+        // 音标（有就显示在最上面）
+        if (word.Phone) {
+            var phone = document.createElement('div');
+            phone.className = 'phone';
+            phone.textContent = word.Phone;
+            bubble.appendChild(phone);
+        }
+
+        // 逐条释义：首段识别为词性，其余为中文
+        trans.forEach(function (t) {
+            var text = String(t).trim();
+            if (!text) {
+                return;
+            }
+            var row = document.createElement('div');
+            row.className = 'trans-row';
+
+            var sp = text.indexOf(' ');
+            if (sp > 0 && sp <= 5) {
+                var pos = document.createElement('span');
+                pos.className = 'pos';
+                pos.textContent = text.slice(0, sp);
+                row.appendChild(pos);
+                text = text.slice(sp + 1);
+            }
+            var cn = document.createElement('span');
+            cn.textContent = text;
+            row.appendChild(cn);
+
+            bubble.appendChild(row);
+        });
+
+        if (!bubble.children.length) {
+            bubble.className = 'empty';
+            bubble.textContent = '这个词还没有释义数据';
+        }
+
+        var rect = el.getBoundingClientRect();
+        var bw = bubble.offsetWidth || 220;
+        var bh = bubble.offsetHeight || 60;
+
+        // 默认显示在单词上方，越界时翻到下方 / 收进视口
+        var left = rect.left + rect.width / 2 - bw / 2;
+        left = Math.max(12, Math.min(left, window.innerWidth - bw - 12));
+        var top = rect.top - bh - 10;
+        if (top < 12) {
+            top = rect.bottom + 10;
+        }
+        if (top + bh > window.innerHeight - 12) {
+            top = Math.max(12, window.innerHeight - bh - 12);
+        }
+
+        bubble.style.left = Math.round(left) + 'px';
+        bubble.style.top = Math.round(top) + 'px';
+        bubble.classList.add('show');
+
+        clearTimeout(bubbleTimer);
+        bubbleTimer = setTimeout(hideBubble, 5200);
+    }
+
+    function hideBubble() {
+        bubble.classList.remove('show');
+    }
+
+    /* ------------------------------------------------ 揭晓 / 重置 */
+
+    function revealNext() {
+        if (current >= words.length) {
+            hint.textContent = '本页单词都看完了，点右上角「标记完成」吧 🌿';
+            return;
+        }
+        var el = document.getElementById('w' + (current + 1));
+        current++;
+        if (el) {
+            el.classList.remove('is-hidden', 'studied');
+            void el.offsetWidth;          // 重排，让弹出动画重新播放
+            el.classList.add('studied');
+            showTrans(el);
+        }
+    }
+
+    function showAll() {
+        for (var i = 0; i < words.length; i++) {
+            var el = document.getElementById('w' + (i + 1));
+            if (el) {
+                el.classList.remove('is-hidden');
+            }
+        }
+        hideBubble();
+    }
+
+    function reset() {
+        for (var i = 0; i < words.length; i++) {
+            var el = document.getElementById('w' + (i + 1));
+            if (el) {
+                el.classList.remove('studied');
+                el.classList.add('is-hidden');
+            }
+        }
+        current = 0;
+        hideBubble();
+        hint.textContent = '点击空白处或按 空格 揭晓下一个单词，悬停任意单词可再看释义';
+    }
+
+    /* ------------------------------------------------ 建立 DOM */
+
+    words.forEach(function (word, i) {
+        var el = document.createElement('div');
+        el.className = 'word is-hidden';
+        el.id = 'w' + (i + 1);
+        el.tabIndex = 0;
+
+        var num = document.createElement('span');
+        num.className = 'num';
+        num.textContent = i + 1;
+
+        var text = document.createElement('span');
+        text.className = 'ww';
+        text.textContent = word.HeadWord;
+
+        el.appendChild(num);
+        el.appendChild(text);
+
+        el.addEventListener('mouseenter', function () { showTrans(el); });
+        el.addEventListener('focus', function () { showTrans(el); });
+        el.addEventListener('click', function (e) {
+            showTrans(el);
+            e.stopPropagation();
+        });
+
+        container.appendChild(el);
     });
 
+    layout();
+
+    /* ------------------------------------------------ 交互 */
+
+    document.getElementById('next').addEventListener('click', function (e) {
+        e.stopPropagation();
+        revealNext();
+    });
+    document.getElementById('showAll').addEventListener('click', function (e) {
+        e.stopPropagation();
+        showAll();
+    });
+    document.getElementById('hiddenAll').addEventListener('click', function (e) {
+        e.stopPropagation();
+        reset();
+    });
+
+    // 点空白处 = 下一条（与旧版行为一致）
+    container.addEventListener('click', revealNext);
+
+    document.addEventListener('keydown', function (e) {
+        if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+            return;
+        }
+        if (e.key === ' ' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            revealNext();
+        } else if (e.key === 'r' || e.key === 'R') {
+            reset();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            markStudied();
+        } else if (e.key === 'Escape') {
+            hideBubble();
+        }
+    });
+
+    // 窗口尺寸变化时重新布局（去抖）
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+            container.querySelectorAll('.word').forEach(function (el) {
+                el.classList.remove('placed');
+            });
+            layout();
+        }, 180);
+    });
+
+    /* ------------------------------------------------ 标记完成 */
+
+    function markStudied() {
+        if (statusBadge.classList.contains('done')) {
+            return;
+        }
+        markBtn.disabled = true;
+        fetch('/markStudied?planId=' + studyPlan.PlanId, { method: 'PUT' })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res && res.ok) {
+                    statusBadge.textContent = '已完成';
+                    statusBadge.classList.remove('todo');
+                    statusBadge.classList.add('done');
+                } else {
+                    alert('标记失败：' + ((res && res.err) || '未知错误'));
+                }
+            })
+            .catch(function (err) {
+                alert('标记失败：' + err);
+            })
+            .finally(function () {
+                markBtn.disabled = false;
+            });
+    }
+
+    markBtn.addEventListener('click', markStudied);
+
+    // 打开页面后先让用户看一眼全貌，3 秒后收起单词进入自测状态。
+    // 若用户已经开始揭晓，就不再打断他。
+    setTimeout(function () {
+        if (current === 0) {
+            reset();
+        }
+    }, 3000);
+})();
 </script>
+
+</body>
 </html>

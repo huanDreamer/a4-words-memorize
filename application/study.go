@@ -62,7 +62,7 @@ func (app StudyApplication) GetStudyPlan(planId int64) (result response.StudyWor
 	if err != nil {
 		return
 	}
-	wordMap := wordsToMap(wordDetails)
+	transMap, phoneMap := wordsToMaps(wordDetails)
 	// 组装
 	result = response.StudyWordResp{
 		Date:   plan.Date,
@@ -76,7 +76,8 @@ func (app StudyApplication) GetStudyPlan(planId int64) (result response.StudyWor
 	for i, w := range plan.Words {
 		result.Words[i] = response.WordInfo{
 			HeadWord:  w.HeadWord,
-			WordTrans: wordMap[w.HeadWord],
+			WordTrans: transMap[w.HeadWord],
+			Phone:     phoneMap[w.HeadWord],
 			Rank:      w.Rank,
 			Mark:      w.Mark,
 		}
@@ -84,14 +85,23 @@ func (app StudyApplication) GetStudyPlan(planId int64) (result response.StudyWor
 	return result, nil
 }
 
-func wordsToMap(words []entity.Word) map[string][]string {
-	wordMap := make(map[string][]string)
+// wordsToMaps 一次遍历，同时产出「释义」与「音标」两张表。
+func wordsToMaps(words []entity.Word) (trans map[string][]string, phone map[string]string) {
+	trans = make(map[string][]string, len(words))
+	phone = make(map[string]string, len(words))
 	for _, w := range words {
-		for _, tran := range w.Content.Word.Content.Trans {
-			wordMap[w.HeadWord] = append(wordMap[w.HeadWord], fmt.Sprintf("%s %s", tran.Pos, tran.TranCn))
+		c := w.Content.Word.Content
+		for _, tran := range c.Trans {
+			trans[w.HeadWord] = append(trans[w.HeadWord], fmt.Sprintf("%s %s", tran.Pos, tran.TranCn))
+		}
+		// 音标优先美式，缺失时退回英式
+		if p := c.Usphone; p != "" {
+			phone[w.HeadWord] = "/" + p + "/"
+		} else if p := c.Ukphone; p != "" {
+			phone[w.HeadWord] = "/" + p + "/"
 		}
 	}
-	return wordMap
+	return trans, phone
 }
 
 // 标记为已学完

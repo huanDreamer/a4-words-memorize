@@ -1,49 +1,74 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta http-equiv="content-type" content="text/html;charset=utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js"></script>
-
-    <title>A4背单词</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>A4 背单词 · 单词本</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<div style="width: 80%; margin: 0 auto">
-    {{ if .bookList }}
-        {{ range $item := .bookList }}
-            <div>
-                <a href="/study?bookId={{ $item.BookId }}">
-                    <p>{{ $item.Name }} 单词量: {{ $item.WordNum }}</p>
-                </a>
-                {{ if $item.StudyPlans }}
-                最近的学习记录:
-                <ul>
+<main class="page">
+    <header class="hero">
+        <span class="brand"><span class="leaf">🌿</span> A4 背单词</span>
+        <h1>今天，想把哪本书背完？</h1>
+        <p class="sub">每次随机抽取 25 个没学过的词，学完点一下「完成」就好。</p>
+
+        <div class="chips">
+            <span class="chip">共 <b id="chipBooks">{{ .TotalBooks }}</b> 本单词本</span>
+            <span class="chip">收录 <b id="chipWords">{{ .TotalWords }}</b> 个词</span>
+            <span class="chip">最近学习 <b id="chipPlans">{{ .TotalPlans }}</b> 条记录</span>
+        </div>
+    </header>
+
+    {{ if .Books }}
+    <section class="books" id="books">
+        {{ range $item := .Books }}
+        <article class="book-card">
+            <div class="book-head">
+                <div class="book-icon">{{ firstRune $item.Name }}</div>
+                <div class="book-info">
+                    <h2 class="book-title">{{ $item.Name }}</h2>
+                    <p class="book-meta">共 {{ $item.WordNum }} 个单词</p>
+                </div>
+                <a class="btn primary" href="/study?bookId={{ $item.BookId }}">开始学习 →</a>
+            </div>
+
+            {{ if $item.StudyPlans }}
+            <div class="plans">
+                <div class="plans-title">最近的学习记录</div>
+                <ul class="plan-list">
                     {{ range $plan := $item.StudyPlans }}
-                    <li>
-                        <a class="plan" href="/study?planId={{ $plan.PlanId }}">
-                            {{ $plan.Time }} 词汇: {{ $plan.Num }} {{ $plan.Status }}
+                    <li class="plan-item">
+                        <a href="/study?planId={{ $plan.PlanId }}">
+                            <span class="plan-dot"></span>
+                            <span class="plan-time">{{ $plan.Time }}</span>
+                            <span class="plan-num">{{ $plan.Num }} 词</span>
+                            {{ if eq $plan.Status "已完成" }}
+                            <span class="badge done">{{ $plan.Status }}</span>
+                            {{ else }}
+                            <span class="badge todo">{{ $plan.Status }}</span>
+                            {{ end }}
                         </a>
                     </li>
                     {{ end }}
                 </ul>
-                {{ end }}
             </div>
+            {{ end }}
+        </article>
         {{ end }}
+    </section>
+    {{ else }}
+    <div class="notice">
+        还没有单词本。先执行 <code>make dataset</code> 生成测试数据集，再刷新本页。
+    </div>
     {{ end }}
-</div>
 
+    <footer class="page-footer">
+        A4 背单词 · 数据保存在本地 <code>data/</code> 目录
+    </footer>
+</main>
 
 </body>
-
-<style>
-    a {
-        text-decoration: none;
-        /*color: #0079ff;*/
-    }
-    .plan {
-        color: #0079ff;
-    }
-</style>
 </html>
