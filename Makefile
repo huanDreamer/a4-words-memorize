@@ -71,7 +71,7 @@ dataset: ## 生成测试数据集：导入 source/ 词典到 ./data（可加 IMP
 	$(GO) run $(IMPORT_PKG) -data $(DATA_DIR) -source $(SOURCE_DIR) $(IMPORT_ARGS)
 
 .PHONY: reset-data
-reset-data: ## 清空并重新生成数据集（慎用：会删除 ./data）
+reset-data: ## 清空并重新生成数据集（慎用：会删除 ./data，被跟踪文件可用 git checkout 还原）
 	rm -rf $(DATA_DIR)
 	$(MAKE) dataset
 
@@ -167,9 +167,9 @@ clean: ## 清理编译产物与覆盖率文件（保留数据）
 	@echo "已清理编译产物"
 
 .PHONY: clean-all
-clean-all: clean ## 清理编译产物 **并删除** ./data 数据
+clean-all: clean ## 清理编译产物 **并删除** ./data 数据（数据随仓库提供，可用 git checkout 还原）
 	rm -rf $(DATA_DIR)
-	@echo "已删除 $(DATA_DIR)/"
+	@echo "已删除 $(DATA_DIR)/（仓库内置数据集可用 'git checkout -- $(DATA_DIR)' 还原）"
 
 # 本地变量覆盖（可选，不纳入版本库）
 -include local.mk

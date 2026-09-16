@@ -21,18 +21,21 @@
 写入采用「先写临时文件再原子 rename」，并保留一份 `.bak` 备份；读操作无需加锁。
 数据目录可通过 `-data` 参数或环境变量 `WORDS_DATA_DIR` 覆盖（默认 `data`）。
 
+仓库内已附带一份**开箱可用的测试数据集**（四级词汇 1162 词 + 雅思词汇 3427 词，共 4589 词，
+并含 10 条示例学习记录），clone 后无需导入即可直接启动。
+运行时产生的 `.bak` / `.tmp` 已在 `.gitignore` 中忽略，不会污染工作区。
+若词典源有更新，或想要一份全新的数据，重新生成即可（会覆盖现有数据）：
+
+```bash
+make reset-data                          # 清空并重建整套数据集
+make dataset IMPORT_ARGS="-sample 200"   # 或只造一份小数据集
+```
+
 ### 快速开始
 
 > 项目提供了 Makefile 封装常用命令，执行 `make help` 可查看全部目标。
 
-1. 生成测试数据集（首次运行必做）：
-
-   ```bash
-   make dataset                              # 导入 source/ 全部词典 + 示例学习记录
-   make dataset IMPORT_ARGS="-sample 200"    # 每本书只导入 200 词，快速造小数据集
-   ```
-
-2. 启动服务：
+1. 启动服务（数据集已随仓库提供，无需额外准备）：
 
    ```bash
    make run       # 编译并启动，默认监听 :8900
@@ -40,7 +43,7 @@
    make release   # 以 release 模式启动
    ```
 
-3. 打开 http://localhost:8900
+2. 打开 http://localhost:8900
 
 ### 常用命令（Makefile）
 

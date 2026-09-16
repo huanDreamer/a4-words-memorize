@@ -2,7 +2,13 @@
 .idea/
 
 # 本地文件存储数据目录（由 cmd/import 生成）
-/data/
+# 提交核心数据集，便于 clone 后直接运行；运行时产生的备份与临时文件不提交，
+# 避免每次启动都制造无意义 diff。重新生成整套数据用 `make reset-data`。
+/data/*.bak
+/data/*.tmp
+!/data/book.json
+!/data/words.json
+!/data/study_plan.json
 
 # 编译产物
 /words
